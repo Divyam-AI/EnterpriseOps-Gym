@@ -95,3 +95,4 @@ class LLMConfig:
     top_p: Optional[float] = None
     effort: Optional[str] = None
     reasoning: Optional[dict] = None
+    disable_divyam_selector: bool = False

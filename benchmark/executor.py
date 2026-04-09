@@ -119,6 +119,7 @@ class BenchmarkExecutor:
             top_p=self.llm_config.top_p,
             effort=self.llm_config.effort,
             reasoning=self.llm_config.reasoning,
+            disable_divyam_selector=self.llm_config.disable_divyam_selector,
         )
 
         # Initialize verifier engine (multi-gym aware)
@@ -149,6 +150,7 @@ class BenchmarkExecutor:
             top_p=planner_llm_config.top_p,
             effort=planner_llm_config.effort,
             reasoning=planner_llm_config.reasoning,
+            disable_divyam_selector=planner_llm_config.disable_divyam_selector,
         )
         self.planner_llm_client.llm = self.planner_llm_client.llm.with_retry(
             retry_if_exception_type=(Exception,),

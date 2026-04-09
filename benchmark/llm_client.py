@@ -23,6 +23,7 @@ class LLMClient:
         top_p: Optional[float] = None,
         effort: Optional[str] = None,
         reasoning: Optional[dict] = None,
+        disable_divyam_selector: bool = False,
     ):
         self.provider = provider.lower()
         self.model = model
@@ -35,6 +36,7 @@ class LLMClient:
         self.top_p = top_p
         self.effort = effort
         self.reasoning = reasoning
+        self.disable_divyam_selector = disable_divyam_selector
         self.llm = None
         self._divyam_last_response_headers: Dict[str, str] = {}
 
@@ -122,7 +124,7 @@ class LLMClient:
                     max_tokens=self.max_tokens,
                     default_headers={
                         "Accept": "application/json",
-                        "x-divyam-traffic-allocation-override": "8",
+                        "x-divyam-traffic-allocation-override": "selector_disabled" if self.disable_divyam_selector else "8",
                         "Authorization": f"Bearer {self.api_key}",
                     },
                     model_kwargs=model_kwargs,

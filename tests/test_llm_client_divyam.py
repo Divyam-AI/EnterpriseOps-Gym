@@ -6,10 +6,11 @@ import pytest
 from unittest.mock import MagicMock, patch, AsyncMock
 
 # Load Divyam config
-with open("conf/llm/divyam.json") as f:
+with open("conf/llm/divyam-pre-prod.json") as f:
     _divyam_config = json.load(f)
     DIVYAM_API_KEY = _divyam_config.get("llm_api_key")
     DIVYAM_MODEL = _divyam_config.get("llm_model")
+    DIVYAM_API_ENDPOINT = _divyam_config.get("llm_api_endpoint")
 
 # Patch target: the ChatOpenAI class as imported inside benchmark.llm_client
 _PATCH_TARGET = "benchmark.llm_client.ChatOpenAI"
@@ -115,6 +116,18 @@ class TestDivyamProviderInit:
         kwargs = self._call_args_kwargs(mock_cls)
         assert "top_p" not in kwargs.get("model_kwargs", {})
 
+    def test_disable_divyam_selector_sends_selector_disabled_header(self):
+        """disable_divyam_selector=True must set x-divyam-traffic-allocation-override to 'selector_disabled'."""
+        _, mock_cls, _ = _make_client(disable_divyam_selector=True)
+        headers = self._call_args_kwargs(mock_cls).get("default_headers", {})
+        assert headers.get("x-divyam-traffic-allocation-override") == "selector_disabled"
+
+    def test_disable_divyam_selector_false_keeps_default_header(self):
+        """disable_divyam_selector=False (default) must keep x-divyam-traffic-allocation-override as '8'."""
+        _, mock_cls, _ = _make_client(disable_divyam_selector=False)
+        headers = self._call_args_kwargs(mock_cls).get("default_headers", {})
+        assert headers.get("x-divyam-traffic-allocation-override") == "8"
+
 
 class TestDivyamInvoke:
     def setup_method(self):
@@ -152,6 +165,35 @@ class TestDivyamInvoke:
 
 @pytest.mark.integration
 class TestDivyamIntegration:
+    async def test_live_response_with_selector_disabled(self):
+        """With disable_divyam_selector=True the selector must route to exactly the requested model."""
+        from langchain_core.messages import HumanMessage
+        from benchmark.llm_client import LLMClient
+
+        client = LLMClient(
+            provider="divyam",
+            model=DIVYAM_MODEL,
+            api_key=DIVYAM_API_KEY,
+            api_endpoint=DIVYAM_API_ENDPOINT,
+            disable_divyam_selector=True,
+        )
+
+        response = await client.invoke_with_tools(
+            messages=[HumanMessage(content="Say hello in one word.")],
+            tools=[],
+        )
+
+        assert response is not None
+        content = response.content if hasattr(response, "content") else str(response)
+        assert isinstance(content, str) and len(content.strip()) > 0, (
+            f"Expected non-empty string response, got: {content!r}"
+        )
+
+        routed_model = response.response_metadata.get("model_name")
+        assert routed_model == DIVYAM_MODEL, (
+            f"Selector chose '{routed_model}' but '{DIVYAM_MODEL}' was requested"
+        )
+
     async def test_live_response(self):
         """Send a real request to Divyam and verify a non-empty text response is returned."""
         from langchain_core.messages import HumanMessage
@@ -161,6 +203,7 @@ class TestDivyamIntegration:
             provider="divyam",
             model=DIVYAM_MODEL,
             api_key=DIVYAM_API_KEY,
+            api_endpoint=DIVYAM_API_ENDPOINT,
         )
 
         response = await client.invoke_with_tools(
