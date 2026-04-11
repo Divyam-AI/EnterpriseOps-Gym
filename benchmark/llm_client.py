@@ -23,6 +23,7 @@ class LLMClient:
         top_p: Optional[float] = None,
         effort: Optional[str] = None,
         reasoning: Optional[dict] = None,
+        disable_divyam_selector: bool = False,
     ):
         self.provider = provider.lower()
         self.model = model
@@ -35,7 +36,9 @@ class LLMClient:
         self.top_p = top_p
         self.effort = effort
         self.reasoning = reasoning
+        self.disable_divyam_selector = disable_divyam_selector
         self.llm = None
+        self._divyam_last_response_headers: Dict[str, str] = {}
 
         self._initialize_llm()
 
@@ -91,6 +94,42 @@ class LLMClient:
                     max_tokens=self.max_tokens,
                 )
             # MARKER: Add a SN provider here
+            elif self.provider == "divyam":
+                import httpx
+                from langchain_openai import ChatOpenAI
+
+                model_kwargs = {}
+                if self.top_p is not None:
+                    model_kwargs["top_p"] = self.top_p
+
+                async def _log_response_headers(response: httpx.Response) -> None:
+                    headers = dict(response.headers)
+                    self._divyam_last_response_headers = headers
+                    logger.debug(
+                        "Divyam response headers [%s %s]: %s",
+                        response.request.method,
+                        response.request.url,
+                        headers,
+                    )
+
+                http_async_client = httpx.AsyncClient(
+                    event_hooks={"response": [_log_response_headers]}
+                )
+
+                self.llm = ChatOpenAI(
+                    model=self.model,
+                    openai_api_key=self.api_key,
+                    openai_api_base=self.custom_api_endpoint or "https://api.divyam.ai/v1",
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    default_headers={
+                        "Accept": "application/json",
+                        "x-divyam-traffic-allocation-override": "selector_disabled" if self.disable_divyam_selector else "8",
+                        "Authorization": f"Bearer {self.api_key}",
+                    },
+                    model_kwargs=model_kwargs,
+                    http_async_client=http_async_client,
+                )
             elif self.provider == "azureopenai":
                 from langchain_openai import AzureChatOpenAI
 
@@ -326,4 +365,18 @@ class LLMClient:
         # Invoke
         logger.info(f"Invoking {self.provider} LLM with {len(tools)} tools")
         response = await llm_with_retry.ainvoke(messages)
+
+        # Enrich response_metadata with Divyam-specific header values
+        if self.provider == "divyam" and self._divyam_last_response_headers:
+            headers = self._divyam_last_response_headers
+            if hasattr(response, "response_metadata"):
+                response.response_metadata["model_provider"] = headers.get(
+                    "x-routed-model-provider", response.response_metadata.get("model_provider")
+                )
+                response.response_metadata["model_name"] = headers.get(
+                    "x-routed-model", response.response_metadata.get("model_name")
+                )
+                # Include all response headers as-is under a dedicated key
+                response.response_metadata["divyam_response_headers"] = headers
+
         return response

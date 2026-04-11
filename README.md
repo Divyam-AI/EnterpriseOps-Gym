@@ -334,3 +334,25 @@ We release 60% of the benchmark samples in the public split. For completeness, w
       url={https://arxiv.org/abs/2603.13594}, 
 }
 ```
+
+# Appendix
+
+## Communicate with Divyam Pre-Prod
+
+Get `gcloud-cli` and add `gke-gcloud-auth-plugin` as a component:-
+```sh
+brew update && brew install --cask gcloud-cli
+export PATH=/opt/homebrew/share/google-cloud-sdk/bin:"$PATH"
+gcloud components install gke-gcloud-auth-plugin
+```
+Autheticate (and, repeat it frequently): `gcloud auth login`.
+
+Get `kubernetes-cli`:-
+`brew install kubernetes-cli`
+
+Fetch credentials, and set context:-
+```sh
+gcloud container clusters get-credentials preprod-1-asia-south1 --region asia-south1 --project pre-production-project
+kubectl config use-context gke_pre-production-project_asia-south1_preprod-1-asia-south1
+```
+Port-forward: `portfwd_pod preprod router 8000`. **Yay!**
